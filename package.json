@@ -1,0 +1,13 @@
+{
+  "name": "cupid",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Akinator for food: answer yes / maybe / no and Cupid finds what you're craving.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "simulate": "node scripts/simulate.js"
+  }
+}

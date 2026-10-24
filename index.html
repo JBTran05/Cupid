@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cupid — find your food match</title>
+  <meta name="description" content="Can't decide what to eat? Answer yes, maybe, or no and Cupid guesses what you're craving.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💘</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Nunito:wght@400;600;700;800&display=swap">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" data-action="home" aria-label="Cupid home">
+      <span class="brand-mark"></span>
+      <span class="brand-name">Cupid</span>
+    </a>
+    <div class="topbar-actions">
+      <button class="loc-chip" data-action="change-location" hidden></button>
+      <button class="link-btn" data-action="restart" hidden>Start over</button>
+    </div>
+  </header>
+
+  <main id="app" class="app"></main>
+
+  <footer class="foot">Made with 💘 for indecisive eaters.</footer>
+
+  <script src="js/data.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
