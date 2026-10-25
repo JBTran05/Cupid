@@ -98,6 +98,15 @@ conversation. Built on 2026-10-24 with Claude Code.
    **pictures of the food**, and let them see more if they don't like one.
 4. Asked whether to keep the per-restaurant **Directions** button (it opens
    Google Maps directions to that one place): owner said **keep it**.
+5. **"It loses its train of thought after a wrong guess."** The owner had said
+   no to American food, Cupid guessed Korean BBQ, they said no, and Cupid then
+   asked about American food again. If the answers already point to a
+   cuisine, Cupid shouldn't ask about another one, and it should never re-ask
+   about a cuisine that was already answered.
+6. **"Don't make it too clicky."** Someone who really doesn't know what they
+   want and presses Maybe for everything would be clicking forever. When Cupid
+   sees that, it should show a place based on the answers so far, then base
+   the rest of the game on those.
 
 ### Timeline of changes
 
@@ -175,6 +184,95 @@ conversation. Built on 2026-10-24 with Claude Code.
   only). Without photos of each restaurant, cards use a compact layout with a
   small dish thumbnail instead of repeating a big photo.
 
+**4. Stay on track after a wrong guess** (2026-10-24, branch
+`algorithm-followup-questions`).
+- Cause: Cupid only avoided repeating the *exact* same question, and cuisine
+  answers were soft weights (×0.03), so after a wrong guess another cuisine
+  could climb back and get asked about. A "no" to classic American didn't
+  touch Southern BBQ at all, so after "Nope, not Korean BBQ" (grilled, meaty,
+  for a group) the next-best dish was Smoked BBQ and Cupid asked about
+  Southern / American food.
+- Cuisine answers are now firm: while any dish that fits them is left, only
+  dishes in every cuisine you said yes to, and not wholly inside one you said
+  no to, are considered (for questions, guesses, the picks panel and the "try
+  one of these" chips). If all of those get turned down, the rest come back.
+- Cuisine questions whose answer is already known are skipped: after a yes,
+  only cuisines inside it; after a no, nothing inside it and not its wider
+  group ("no classic American" → never "American food at all?").
+- The cuisine phase ends for good at the first guess, and in the dish phase
+  Cupid won't bring up a new part of the world while the regions you said
+  yes/maybe to (plus the region of dishes it already guessed) still hold
+  ≥25% of the probability (`TRACK_HOLD`).
+- Checked with an extra scratch test (not in the repo) using less tidy
+  simulated users who sometimes shrug or slip on dish questions, 9,200 games:
+
+  | | Before | After |
+  |---|---|---|
+  | Games with a cuisine question already settled by earlier answers | 69.1% | 0% |
+  | Guess that ignores a cuisine answer | 0.5% | 0% |
+  | Jumps to a new region after a wrong guess | 2.2% | 0.6% |
+  | "No to American", wrong Korean BBQ guess, then an American question | 2 of 100 | 0 of 84 |
+  | Average questions | 11.6 | 11.2 |
+  | Games with at least one wrong guess | 14.5% | 16.8% |
+
+  The extra wrong guesses come from the firm cuisine answers: with other
+  cuisines out, the top dish reaches 70% about a question sooner. Raising
+  `GUESS.confident` to 0.75 brings it back to 15.0% at 11.5 questions; left
+  at 0.7 because that's the owner's earlier choice.
+- `npm run simulate` (perfectly consistent users): still 100% found, 99.1%
+  right first try, 10.3 / 9.7 questions (decisive / flexible), median 86%
+  sure at a guess.
+- Browser replay: no to Vietnamese and classic American, maybe Chinese and
+  Korean, grilled → guessed Korean BBQ at 71% → Nope → asked noodles,
+  dumplings, Asian fusion, soup, Filipino (no American) → Sizzling Sisig.
+
+**5. Don't make indecisive people click forever** (2026-10-24, same branch).
+- Before: someone answering Maybe to everything clicked ~29 times and almost
+  always ended on "You've stumped Cupid" without seeing a single restaurant.
+- Now, after **3 Maybes in a row** (`GUESS.maybeRun`), at least one of them
+  about the dish rather than the cuisine, Cupid stops asking and goes
+  straight to the match screen for its best pick so far, headed "Can't
+  decide? Try this" with a note explaining why, the restaurant list and the
+  runner-up chips. "Not quite, keep guessing" carries on from the answers so
+  far with that pick counted as a "no", so the next questions and picks build
+  on everything said. Back from there shows the pick as a normal guess card.
+- Why "one about the dish": with every Maybe counting, the flexible simulated
+  user ("maybe Thai, maybe Vietnamese, maybe Filipino" = open to Southeast
+  Asian, a real answer) dropped from 99.1% to 93.0% right first try. Requiring
+  one dish Maybe keeps it at 98.8%. Counting cuisine Maybes as half, or only
+  when they hop regions, kept 99.1% but showed places ~1 click later.
+- Early picks count toward the 4-wrong-guesses limit, so a person who keeps
+  saying Maybe gets ~4 picks with restaurants and then the shortlist, in about
+  16-18 clicks.
+- `npm run simulate` now has a third persona, **indecisive** (Maybe to 80% of
+  questions; not counted in "Hardest foods"), and prints how many clicks
+  before each persona sees restaurants:
+
+  | Indecisive persona | Before | After |
+  |---|---|---|
+  | Clicks before seeing any restaurants | 27.3 | 6.4 |
+  | Questions per game | 21.4 | 15.4 |
+  | Ends on the exact dish they had in mind | 27.8% | 19.6% |
+
+  The last row drops because early picks use up the guess limit; for someone
+  that unsure, being shown places early matters more than the exact dish.
+  Decisive persona unchanged; flexible 98.8% right first try (was 99.1%).
+- Scratch test, players answering Maybe to everything / 80% / 50%: clicks
+  before any place 28.8 → 4.6, 27.3 → 6.5, 22.8 → 11.8.
+- Browser: Maybe ×6 (five cuisines, then noodles) → "Can't decide? Try this:
+  Ramen" with Pad Thai, Pho, Chinese Takeout, Hand-Pulled Noodles as
+  alternatives → keep guessing → Maybe ×3 (rice, spicy, soup) → Soft Tofu
+  Stew. Checked Back, dark mode and 375 px width.
+- Follow-ups from play-testing: the "Can't decide?" note said "keep going"
+  but the only button was at the bottom of the page, so a **Keep going →**
+  button now sits in the note. "You've stumped Cupid!" had only Back and
+  Play again, so it got a **Keep going →** button that continues past the
+  4-guess limit with 4 more guesses. Scratch check, 690 all-Maybe games
+  pressing it up to 3 times: never gave up straight after, never re-offered
+  a rejected dish, 14% reached their dish (vs ~3% without it). Browser:
+  4 early picks passed → stumped screen → Keep going → question 15 ("round
+  two"); Back → stumped screen; shortlist pick → keep guessing → continues.
+
 ### Data model (`js/data.js`)
 
 - `cuisines`: id → `{ name, parent, emoji, phrase?, adj?, osm? }`. Groups:
@@ -207,30 +305,46 @@ conversation. Built on 2026-10-24 with Claude Code.
   (in this cuisine ×1, in its parent group ×0.9, in its region ×0.75), with a
   floor of 0.22 (0.4 for group questions). That's how "maybe Thai" keeps
   Vietnamese and Asian food alive and pushes everything else down.
+- **Cuisine yes/no are also firm:** while any un-rejected dish fits them (in
+  every cuisine answered yes, not wholly inside one answered no; a dish in two
+  cuisines like pizza survives a no to one of them), every other dish's weight
+  is set to 0. If none fit any more, the soft weights above take over again.
 - **Trait answers:** yes = floor + (1−floor)·v, no = floor + (1−floor)·(1−v),
   maybe = 0.7 + 0.3·v. Default floors are 0.06.
 - **Choosing the next question:** expected information gain (bits), using
   P(yes | dish) = L_yes / (L_yes + L_no), times a multiplier, times random
   jitter (±30% for cuisine questions in the cuisine phase, ±15% otherwise).
+  - Cuisine questions that earlier answers settle are never asked: after a
+    yes, only cuisines inside it; after a no, nothing inside it and not the
+    group above it (`settled()`).
   - The **opening question** is a random cuisine from the 10 most informative,
     weighted by information gain.
   - **Cuisine phase** lasts until a cuisine gets a Yes, or one cuisine holds
-    ≥55% of the probability, or "maybe" cuisines hold ≥60%, or 7 questions.
+    ≥55% of the probability, or "maybe" cuisines hold ≥60%, or 7 questions,
+    or Cupid makes its first guess (it doesn't come back after a wrong one).
     During it: specific-cuisine questions ×1, with ×1.8 for siblings of a
     "maybe" cuisine and ×1.4 for the same region. Broad group questions ("Is
     Asian food on the table at all?") only after a cuisine got No/Maybe, at
     ×min(0.9, 0.25 + 0.15 × number of No's). Dish traits only after 3
     questions, at ×0.5.
   - **Dish phase:** traits ×their weight, specific cuisines ×0.6, groups ×0.3.
+    Cuisines outside the "track" (regions answered yes/maybe, plus regions of
+    rejected guesses) are skipped while the track holds ≥25% of the
+    probability (`TRACK_HOLD`).
 - **Guessing:** needs ≥3 questions; guesses when the top dish is **≥70%**
   likely, or when no question is worth ≥0.04 bits, or after 22 questions.
+  After 3 Maybes in a row (one of them on a dish question) it makes an early
+  pick however unsure it is, flagged `indecisive: true` on the prompt.
   Two questions between guesses unless the top dish is ≥85%. After 4 rejected
-  guesses it gives up and shows a shortlist.
+  guesses it gives up and shows a shortlist; **Keep going** there adds a
+  `{type:'more'}` step, which gives 4 more guesses (the limit counts wrong
+  guesses since the last `more`). Dishes already turned down stay out.
 - **Guess answers:** Nope → that dish ×0.01. Close → that dish ×0.08 and every
   other dish × (0.25 + 0.75 × similarity), where similarity = 0.45 × cuisine
   closeness + 0.55 × weighted Jaccard overlap of tags.
-- Tuning knobs: `GUESS`, `MAYBE_FALLOFF`, `CUISINE_FLOOR`, `TRAIT_FLOOR` at the
-  top of `engine.js`; trait floors and weights in `data.js`.
+- Tuning knobs: `GUESS`, `MAYBE_FALLOFF`, `CUISINE_FLOOR`, `TRAIT_FLOOR`,
+  `TRACK_HOLD` at the top of `engine.js`; trait floors and weights in
+  `data.js`.
 
 ### The app (`js/app.js`)
 
@@ -238,6 +352,16 @@ conversation. Built on 2026-10-24 with Claude Code.
   is template strings into `#app`. The match screen's restaurant list and dish
   photo are filled separately (`renderPlaces`, `renderDishPhoto`) so they can
   update as data arrives.
+- An `indecisive` prompt skips the guess card: `showMatch(food, 'suggest')`
+  opens the match screen with the "Can't decide? Try this" heading and a
+  **Keep going →** button right in the note at the top (the bottom "Not
+  quite, keep guessing" button is below the fold, and below up to 8
+  restaurant cards once a location is set). Either one records a "no" on
+  that dish, as for a guess, and continues the game.
+- The give-up screen's main button is **Keep going →** (`keepGoing()`: pushes
+  the give-up prompt to history and a `more` step), so Back returns to the
+  give-up screen. Picking a shortlist dish and then "Not quite, keep
+  guessing" also keeps going. "Play again" there is now a plain button.
 - Talks to the server with `api()`. Requests carrying the location are POSTs,
   so coordinates stay out of URLs and logs.
 - When a location is set it calls `/api/prepare` so the server starts
@@ -288,8 +412,12 @@ conversation. Built on 2026-10-24 with Claude Code.
 
 ### Testing that was done
 
-- `npm run simulate` after every engine/data change. Last run: 100% of dishes
-  found, ~99% on the first guess, ~10 questions on average.
+- `npm run simulate` after every engine/data change. Last run (after step 4):
+  100% of dishes found, ~99% on the first guess, ~10 questions on average.
+  Its users answer perfectly consistently, so Cupid almost never guesses
+  wrong there and the after-a-wrong-guess path barely gets exercised; step 4
+  was checked with a separate noisier test (see the timeline). Since step 5
+  it also plays an indecisive persona and prints clicks before restaurants.
 - Played in the browser (light and dark mode, desktop and 375 px phone width,
   no horizontal scrolling). Checked: the "maybe Thai → Vietnamese?" flow, Close
   on a guess, Back through guesses, "Not quite, keep guessing", give-up
@@ -327,6 +455,12 @@ conversation. Built on 2026-10-24 with Claude Code.
 - Answers are Yes / Maybe / No; the cuisine comes first; "Maybe" means "open to
   that part of the world".
 - Guess only when about 70% sure or more.
+- Respect cuisine answers: never re-ask about a cuisine already answered, and
+  don't switch to another cuisine while the answers point to one, including
+  after a wrong guess.
+- Algorithm work goes on its own branch, merged only when the owner says so.
+- Don't make people click forever: a run of Maybes gets them a place to eat
+  right away, and the game continues from their answers if they want more.
 - Restaurants are shown inside the app (no "search Google Maps" step), with
   food photos, after asking for location up front.
 - Keep the per-restaurant **Directions** button.

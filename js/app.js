@@ -16,7 +16,7 @@
     history: [], // prompts already answered, so Back can show them again
     prompt: null,
     match: null,
-    matchFrom: null, // 'guess' | 'pick'
+    matchFrom: null, // 'guess' | 'pick' | 'suggest' (shown early after a run of Maybes)
     location: null, // { lat, lng, label }; kept in memory only
     locate: { busy: '', error: '', query: '', then: 'game' },
     places: null, // { foodId, status, items, next, provider, error, slow, loadingMore, moreError }
@@ -122,6 +122,7 @@
     const last = state.steps[state.steps.length - 1];
     const key = state.steps.length + (prompt.type === 'guess' ? prompt.food.id : prompt.question.id);
     if (!last) return pick(["Let's find your match.", 'Okay — what are we craving?', 'Let me read your mind…'], key);
+    if (last.type === 'more') return pick(['Fresh arrows! Let’s keep going.', 'Okay, round two — let me dig deeper.'], key);
     if (last.type === 'guess') {
       return last.answer === 'close'
         ? pick(['Close! Let me adjust…', 'Ooh, warm. Getting warmer…'], key)
@@ -247,7 +248,7 @@
   function renderTrail() {
     if (!state.steps.length) return '';
     const marks = { yes: '✓', maybe: '~', no: '✕' };
-    const chips = state.steps.map((s) => {
+    const chips = state.steps.filter((s) => s.type !== 'more').map((s) => {
       let label;
       let answer = s.answer;
       if (s.type === 'guess') {
@@ -304,15 +305,21 @@
     const f = state.match;
     const others = engine.ranking(state.steps).filter((r) => r.food !== f).slice(0, 4).map((r) => r.food);
     const where = state.location ? state.location.label : 'you';
+    const suggested = state.matchFrom === 'suggest';
     return `
       <section class="screen match">
         <div class="match-hero">
           <div class="match-photo" id="dish-photo"></div>
           <div class="match-info">
-            <p class="eyebrow">${mascot('love', 'mascot-inline')}It's a match</p>
+            <p class="eyebrow">${suggested ? `${mascot('excited', 'mascot-inline')}Can't decide? Try this` : `${mascot('love', 'mascot-inline')}It's a match`}</p>
             <h1 id="prompt-text" tabindex="-1">${esc(f.name)}</h1>
             <p class="match-cuisine">${esc(cuisineName(f))}</p>
             <p class="match-desc">${esc(f.desc)}</p>
+            ${suggested ? `
+            <div class="match-why">
+              <p>Lots of maybes, so here’s my best pick from what you’ve told me. Not it? Keep going and I’ll work from there.</p>
+              <button class="btn btn-ghost" data-action="back-to-game">Keep going →</button>
+            </div>` : ''}
           </div>
         </div>
         <section class="places" aria-labelledby="places-title">
@@ -428,12 +435,13 @@
           ${mascot('sad')}
           <p class="eyebrow">Out of arrows</p>
           <h1 id="prompt-text" tabindex="-1">You've stumped Cupid!</h1>
-          <p class="match-desc">Here's my best shortlist from everything you told me. Pick one to see places near you.</p>
+          <p class="match-desc">Here's my best shortlist from everything you told me. Pick one to see places near you, or keep going and I'll ask a few more questions.</p>
+          <button class="btn btn-primary" data-action="keep-going">Keep going →</button>
         </div>
         <div class="runners"><div class="dish-chips">${shortlist.map(dishChip).join('')}</div></div>
         <div class="end-actions">
           <button class="btn btn-ghost" data-action="undo">← Back</button>
-          <button class="btn btn-primary" data-action="restart">Play again</button>
+          <button class="btn btn-ghost" data-action="restart">Play again</button>
         </div>
       </section>`;
   }
@@ -476,9 +484,12 @@
   function advance() {
     const next = engine.nextPrompt(state.steps);
     if (next.type === 'giveup') {
+      state.prompt = next; // so Back can return here after "keep going"
       state.screen = 'giveup';
     } else {
       state.prompt = next;
+      // After a run of Maybes, skip the guess card and go straight to places.
+      if (next.indecisive) return showMatch(next.food, 'suggest');
       state.screen = 'play';
       if (next.type === 'guess') loadDishPhoto(next.food); // ready in case it's a yes
     }
@@ -504,8 +515,16 @@
     if (!state.history.length) return;
     state.prompt = state.history.pop();
     state.steps.pop();
-    state.screen = 'play';
+    state.screen = state.prompt.type === 'giveup' ? 'giveup' : 'play';
     render();
+  }
+
+  // Past the guess limit: Cupid gets a fresh set of guesses and carries on
+  // from everything said so far (dishes already turned down stay out).
+  function keepGoing() {
+    state.history.push(state.prompt);
+    state.steps.push({ type: 'more' });
+    advance();
   }
 
   function showMatch(food, from) {
@@ -519,8 +538,11 @@
   }
 
   function backToGame() {
+    // Opened from the give-up shortlist: keep going means another round.
+    if (state.prompt.type === 'giveup') return keepGoing();
     state.screen = 'play';
-    if (state.matchFrom === 'guess') answer('no');
+    // Moving on from a guess or an early pick counts as "not that one".
+    if (state.matchFrom === 'guess' || state.matchFrom === 'suggest') answer('no');
     else render();
   }
 
@@ -678,6 +700,7 @@
       undo,
       choose: () => showMatch(engine.foodById[el.dataset.id], 'pick'),
       'back-to-game': backToGame,
+      'keep-going': keepGoing,
       'use-gps': useGps,
       'skip-location': leaveLocate,
       'change-location': () => askForLocation(state.screen === 'start' ? 'game' : state.screen),
