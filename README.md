@@ -342,8 +342,11 @@ conversation. Built on 2026-10-24 with Claude Code.
   photo are filled separately (`renderPlaces`, `renderDishPhoto`) so they can
   update as data arrives.
 - An `indecisive` prompt skips the guess card: `showMatch(food, 'suggest')`
-  opens the match screen with the "Can't decide? Try this" heading, and
-  "keep guessing" from there records a "no" on that dish, as for a guess.
+  opens the match screen with the "Can't decide? Try this" heading and a
+  **Keep going →** button right in the note at the top (the bottom "Not
+  quite, keep guessing" button is below the fold, and below up to 8
+  restaurant cards once a location is set). Either one records a "no" on
+  that dish, as for a guess, and continues the game.
 - Talks to the server with `api()`. Requests carrying the location are POSTs,
   so coordinates stay out of URLs and logs.
 - When a location is set it calls `/api/prepare` so the server starts

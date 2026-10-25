@@ -314,7 +314,11 @@
             <h1 id="prompt-text" tabindex="-1">${esc(f.name)}</h1>
             <p class="match-cuisine">${esc(cuisineName(f))}</p>
             <p class="match-desc">${esc(f.desc)}</p>
-            ${suggested ? '<p class="match-why">Lots of maybes, so here’s my best pick from what you’ve told me. Not it? Keep going and I’ll work from there.</p>' : ''}
+            ${suggested ? `
+            <div class="match-why">
+              <p>Lots of maybes, so here’s my best pick from what you’ve told me. Not it? Keep going and I’ll work from there.</p>
+              <button class="btn btn-ghost" data-action="back-to-game">Keep going →</button>
+            </div>` : ''}
           </div>
         </div>
         <section class="places" aria-labelledby="places-title">
