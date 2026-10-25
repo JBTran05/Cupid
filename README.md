@@ -58,7 +58,9 @@ and `.env` is git-ignored and never served.
   (Google Places or OpenStreetMap).
 
 Your location is only sent to these services to search. It's kept in memory
-in the page and never stored.
+in the page and not stored, unless you tick **Remember this location on this
+device**. Then it's saved in your browser only (never on the server), and you
+can remove it with **Forget** on the start screen.
 
 ## Adding dishes
 
@@ -150,7 +152,8 @@ conversation. Built on 2026-10-24 with Claude Code.
 **3. Location first, then a real restaurant list with food photos.**
 - New **location step** after "Find my match": "Share my location" (browser
   permission prompt), or type a city/ZIP, or skip. A 📍 chip in the header
-  shows/changes the location at any time. Location lives in page memory only.
+  shows/changes the location at any time. Location lives in page memory only
+  (until step 4 added an opt-in to remember it).
 - Added a **local Node server** (`server.js` + `server/`), because the
   restaurant APIs can't be called from the browser (CORS, API key secrecy,
   OpenStreetMap blocks browser user-agents).
@@ -174,6 +177,19 @@ conversation. Built on 2026-10-24 with Claude Code.
   pulled in the wrong cuisine). Chains are de-duplicated (nearest location
   only). Without photos of each restaurant, cards use a compact layout with a
   small dish thumbnail instead of repeating a big photo.
+
+**4. Remember the last location (opt-in), on branch `lastlocation`.**
+- Owner asked for returning users to skip the location step, opt-in only.
+- The location step has a **Remember this location on this device** checkbox,
+  off by default. When it's ticked and a location is set, `{ lat, lng, label }`
+  is saved in `localStorage` under `cupid.lastLocation`. Setting a location
+  with it unticked deletes any saved one.
+- On page load a saved location is restored and `/api/prepare` is called, so
+  "Find my match" goes straight to the questions. The start screen then shows
+  "📍 Restaurants near *Place*" with **Change** and **Forget**. The checkbox
+  starts ticked when a location is already saved.
+- Storage access is wrapped in try/catch: if the browser blocks it (private
+  windows, strict settings), the location still works for that visit.
 
 ### Data model (`js/data.js`)
 
@@ -337,5 +353,3 @@ conversation. Built on 2026-10-24 with Claude Code.
 - Set up the Google Places key and verify the Google path end to end.
 - Show the dish photo on the guess card too (it's already prefetched).
 - Desserts, drinks, breakfast as categories.
-- Remember the last location (opt-in) so returning users skip the location
-  step.

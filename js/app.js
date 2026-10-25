@@ -17,8 +17,8 @@
     prompt: null,
     match: null,
     matchFrom: null, // 'guess' | 'pick'
-    location: null, // { lat, lng, label }; kept in memory only
-    locate: { busy: '', error: '', query: '', then: 'game' },
+    location: null, // { lat, lng, label }; saved in this browser only if the user opts in
+    locate: { busy: '', error: '', query: '', then: 'game', remember: false },
     places: null, // { foodId, status, items, next, provider, error, slow, loadingMore, moreError }
     dishPhotos: {}, // food id -> { url, creditUrl } or null when there's none
   };
@@ -145,6 +145,11 @@
   // ---------- screens ----------
 
   function renderStart() {
+    const saved = state.location && loadSavedLocation()
+      ? `<p class="saved-location">📍 Restaurants near <b>${esc(state.location.label)}</b>
+          <button class="link-btn" data-action="change-location">Change</button>
+          <button class="link-btn" data-action="forget-location">Forget</button></p>`
+      : '';
     return `
       <section class="screen start">
         ${mascot('idle', 'mascot-hero')}
@@ -153,6 +158,7 @@
         <p class="lede">Answer a few questions with <b>Yes</b>, <b>Maybe</b>, or <b>No</b>.
           Cupid narrows it down — like Akinator, but for your stomach — then shows you restaurants nearby that serve it.</p>
         <button class="btn btn-primary btn-lg" data-action="start">Find my match</button>
+        ${saved}
         <p class="fine">Tip: press <kbd>Y</kbd> <kbd>M</kbd> <kbd>N</kbd> to answer, <kbd>←</kbd> to go back.</p>
         <ol class="how">
           <li><span>1</span>Share where you are</li>
@@ -163,7 +169,7 @@
   }
 
   function renderLocate() {
-    const { busy, error, query, then } = state.locate;
+    const { busy, error, query, then, remember } = state.locate;
     const disabled = busy ? 'disabled' : '';
     const skipLabel = then === 'game' ? 'Skip — just tell me what to eat' : 'Not now';
     return `
@@ -179,9 +185,13 @@
           <input id="place-input" name="query" type="text" placeholder="Type a city or ZIP code" value="${esc(query)}" autocomplete="off" required ${disabled}>
           <button class="btn btn-ghost" type="submit" ${disabled}>Use this</button>
         </form>
+        <label class="remember">
+          <input type="checkbox" data-field="remember" ${remember ? 'checked' : ''} ${disabled}>
+          Remember this location on this device
+        </label>
         <p class="locate-status${error ? ' is-error' : ''}" role="status">${esc(busy || error)}</p>
         <button class="link-btn" data-action="skip-location">${skipLabel}</button>
-        <p class="locate-note">Your location is only used to search for restaurants. Cupid doesn't save it.</p>
+        <p class="locate-note">Your location is only used to search for restaurants. Cupid only saves it if you tick the box above, and then only in this browser.</p>
       </section>`;
   }
 
@@ -533,8 +543,41 @@
 
   let locateAttempt = 0; // ignore answers that arrive after the user moved on
 
+  // Opt-in "remember my location": kept in localStorage, never sent anywhere
+  // except the usual restaurant searches. Storage can be blocked (private
+  // windows, strict settings), so every access is allowed to fail.
+  const SAVED_LOCATION_KEY = 'cupid.lastLocation';
+
+  function loadSavedLocation() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SAVED_LOCATION_KEY));
+      if (saved && Number.isFinite(saved.lat) && Number.isFinite(saved.lng) && typeof saved.label === 'string') {
+        return { lat: saved.lat, lng: saved.lng, label: saved.label };
+      }
+    } catch {
+      // nothing usable saved
+    }
+    return null;
+  }
+
+  function saveLocation(location) {
+    try {
+      if (location) localStorage.setItem(SAVED_LOCATION_KEY, JSON.stringify(location));
+      else localStorage.removeItem(SAVED_LOCATION_KEY);
+    } catch {
+      // storage blocked: the location still works for this visit
+    }
+  }
+
+  function forgetLocation() {
+    saveLocation(null);
+    state.location = null;
+    state.locate.remember = false;
+    render();
+  }
+
   function askForLocation(then) {
-    state.locate = { busy: '', error: '', query: state.locate.query, then };
+    state.locate = { busy: '', error: '', query: state.locate.query, then, remember: !!loadSavedLocation() };
     state.screen = 'locate';
     render();
     window.scrollTo({ top: 0 });
@@ -593,6 +636,7 @@
   function setLocation({ lat, lng, label }) {
     state.location = { lat, lng, label };
     state.locate.busy = '';
+    saveLocation(state.locate.remember ? state.location : null);
     // Start gathering nearby restaurants now, while the user answers questions.
     api('/api/prepare', { lat, lng }).catch(() => {});
     leaveLocate();
@@ -681,6 +725,7 @@
       'use-gps': useGps,
       'skip-location': leaveLocate,
       'change-location': () => askForLocation(state.screen === 'start' ? 'game' : state.screen),
+      'forget-location': forgetLocation,
       'retry-places': () => loadPlaces(),
       'more-places': () => loadPlaces({ more: true }),
     };
@@ -688,6 +733,10 @@
       e.preventDefault();
       actions[el.dataset.action]();
     }
+  });
+
+  document.addEventListener('change', (e) => {
+    if (e.target.dataset.field === 'remember') state.locate.remember = e.target.checked;
   });
 
   document.addEventListener('submit', (e) => {
@@ -717,5 +766,12 @@
   });
 
   document.querySelector('.brand-mark').innerHTML = mascot('idle');
+
+  // A returning user who opted in skips the location step.
+  const savedLocation = loadSavedLocation();
+  if (savedLocation) {
+    state.location = savedLocation;
+    api('/api/prepare', { lat: savedLocation.lat, lng: savedLocation.lng }).catch(() => {});
+  }
   render();
 })();
