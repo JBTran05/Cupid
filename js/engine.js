@@ -10,6 +10,7 @@
  * A game is just a list of steps, so undo is "drop the last step":
  *   { type: 'q', qid: 't:noodles', answer: 'yes' | 'maybe' | 'no' }
  *   { type: 'guess', fid: 'pho', answer: 'no' | 'close' }
+ *   { type: 'more' }  "keep going" after Cupid gave up: a fresh set of guesses
  */
 (function (root, factory) {
   const api = factory();
@@ -183,6 +184,7 @@
     }
 
     function stepLikelihood(step, f) {
+      if (step.type === 'more') return 1;
       if (step.type === 'guess') {
         if (f.id === step.fid) return step.answer === 'close' ? 0.08 : 0.01;
         return step.answer === 'close' ? 0.25 + 0.75 * similarity(f, foodById[step.fid]) : 1;
@@ -263,6 +265,9 @@
         if (questionById[steps[i].qid].kind === 'trait') dishMaybe = true;
       }
       if (!dishMaybe) maybeRun = 0;
+      // Wrong guesses since the user last chose to keep going.
+      let misses = 0;
+      for (let i = steps.length - 1; i >= 0 && steps[i].type !== 'more'; i--) if (steps[i].type === 'guess') misses++;
       const rejected = rejectedIds(steps);
 
       // Where the game has been heading: regions of cuisines the user said yes
@@ -287,6 +292,7 @@
         cuisinePhase: !leafYes && !rejected.size && topLeafMass < 0.55 && maybeMass < 0.6 && qSteps.length < 7,
         sinceGuess,
         maybeRun,
+        misses,
         rejected,
       };
     }
@@ -338,7 +344,7 @@
         .map((food, i) => ({ food, p: p[i] }))
         .filter((r) => !ctx.rejected.has(r.food.id))
         .sort((a, b) => b.p - a.p);
-      if (!ranked.length || ctx.rejected.size >= GUESS.maxRejected) return { type: 'giveup' };
+      if (!ranked.length || ctx.misses >= GUESS.maxRejected) return { type: 'giveup' };
 
       const h = entropy(p);
       // Open with a hunch, like Akinator: one of the big cuisines, picked at

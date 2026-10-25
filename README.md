@@ -263,6 +263,15 @@ conversation. Built on 2026-10-24 with Claude Code.
   Ramen" with Pad Thai, Pho, Chinese Takeout, Hand-Pulled Noodles as
   alternatives → keep guessing → Maybe ×3 (rice, spicy, soup) → Soft Tofu
   Stew. Checked Back, dark mode and 375 px width.
+- Follow-ups from play-testing: the "Can't decide?" note said "keep going"
+  but the only button was at the bottom of the page, so a **Keep going →**
+  button now sits in the note. "You've stumped Cupid!" had only Back and
+  Play again, so it got a **Keep going →** button that continues past the
+  4-guess limit with 4 more guesses. Scratch check, 690 all-Maybe games
+  pressing it up to 3 times: never gave up straight after, never re-offered
+  a rejected dish, 14% reached their dish (vs ~3% without it). Browser:
+  4 early picks passed → stumped screen → Keep going → question 15 ("round
+  two"); Back → stumped screen; shortlist pick → keep guessing → continues.
 
 ### Data model (`js/data.js`)
 
@@ -327,7 +336,9 @@ conversation. Built on 2026-10-24 with Claude Code.
   After 3 Maybes in a row (one of them on a dish question) it makes an early
   pick however unsure it is, flagged `indecisive: true` on the prompt.
   Two questions between guesses unless the top dish is ≥85%. After 4 rejected
-  guesses it gives up and shows a shortlist.
+  guesses it gives up and shows a shortlist; **Keep going** there adds a
+  `{type:'more'}` step, which gives 4 more guesses (the limit counts wrong
+  guesses since the last `more`). Dishes already turned down stay out.
 - **Guess answers:** Nope → that dish ×0.01. Close → that dish ×0.08 and every
   other dish × (0.25 + 0.75 × similarity), where similarity = 0.45 × cuisine
   closeness + 0.55 × weighted Jaccard overlap of tags.
@@ -347,6 +358,10 @@ conversation. Built on 2026-10-24 with Claude Code.
   quite, keep guessing" button is below the fold, and below up to 8
   restaurant cards once a location is set). Either one records a "no" on
   that dish, as for a guess, and continues the game.
+- The give-up screen's main button is **Keep going →** (`keepGoing()`: pushes
+  the give-up prompt to history and a `more` step), so Back returns to the
+  give-up screen. Picking a shortlist dish and then "Not quite, keep
+  guessing" also keeps going. "Play again" there is now a plain button.
 - Talks to the server with `api()`. Requests carrying the location are POSTs,
   so coordinates stay out of URLs and logs.
 - When a location is set it calls `/api/prepare` so the server starts

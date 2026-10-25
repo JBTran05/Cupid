@@ -635,6 +635,7 @@ kbd {
 }
 .match-card .mascot { width: 110px; margin: 0 auto 6px; }
 .match-card .match-desc { margin: 8px auto 0; }
+.match-card .btn { margin-top: 18px; }
 .giveup { max-width: 760px; }
 
 .end-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 28px; }
