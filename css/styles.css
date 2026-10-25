@@ -500,6 +500,9 @@ kbd {
 .match h1 { margin: 0; font-family: var(--font-display); font-size: clamp(34px, 5vw, 52px); line-height: 1.05; letter-spacing: -0.02em; }
 .match-cuisine { margin: 6px 0 8px; color: var(--accent-strong); font-weight: 800; }
 .match-desc { max-width: 46ch; margin: 8px 0 0; color: var(--muted); font-size: 18px; }
+.match-why { max-width: 46ch; margin: 14px 0 0; padding: 12px 14px; border-radius: 14px; background: var(--maybe-soft); color: var(--maybe-ink); font-size: 15px; font-weight: 700; }
+.match-why p { margin: 0; }
+.match-why .btn { margin-top: 10px; padding: 8px 18px; font-size: 15px; }
 
 .match-hero {
   display: grid;
@@ -632,6 +635,7 @@ kbd {
 }
 .match-card .mascot { width: 110px; margin: 0 auto 6px; }
 .match-card .match-desc { margin: 8px auto 0; }
+.match-card .btn { margin-top: 18px; }
 .giveup { max-width: 760px; }
 
 .end-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 28px; }

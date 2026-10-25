@@ -25,39 +25,50 @@ function seeded(seed) {
 }
 
 // How a simulated person answers. `maybeRate`: chance they say "maybe" to a
-// different cuisine from the same part of the world.
-function answerFor(q, target, rng, maybeRate) {
+// different cuisine from the same part of the world. `unsure`: chance they
+// shrug and say "maybe" to any question at all.
+function answerFor(q, target, rng, persona) {
+  if (persona.unsure && rng() < persona.unsure) return 'maybe';
   const v = engine.value(q, target);
   if (v >= 0.75) return 'yes';
   if (v >= 0.25) return 'maybe';
-  if (q.kind === 'cuisine' && q.leaf && engine.regionOf(q.node) === engine.regionOf(target.cuisineId) && rng() < maybeRate) {
+  if (q.kind === 'cuisine' && q.leaf && engine.regionOf(q.node) === engine.regionOf(target.cuisineId) && rng() < persona.maybeRate) {
     return 'maybe';
   }
   return 'no';
 }
 
-function play(target, rng, maybeRate) {
+// An early pick after a run of Maybes goes straight to restaurants; moving on
+// from it counts as a "no", like a wrong guess.
+function play(target, rng, persona) {
   const steps = [];
   const confidence = []; // how sure Cupid was at each guess
+  let placesAt = null; // clicks before Cupid first showed restaurants
+  const end = (ok) => ({ ok, steps, confidence, placesAt: placesAt ?? steps.length + (ok ? 1 : 0) });
   for (let turn = 0; turn < 60; turn++) {
     const prompt = engine.nextPrompt(steps, rng);
-    if (prompt.type === 'giveup') return { ok: false, steps, confidence };
+    if (prompt.type === 'giveup') return end(false);
     if (prompt.type === 'guess') {
-      confidence.push(prompt.confidence);
-      if (prompt.food.id === target.id) return { ok: true, steps, confidence };
-      const close = engine.similarity(prompt.food, target) > 0.6;
+      if (prompt.indecisive && placesAt === null) placesAt = steps.length;
+      if (!prompt.indecisive) confidence.push(prompt.confidence);
+      if (prompt.food.id === target.id) return end(true);
+      const close = !prompt.indecisive && engine.similarity(prompt.food, target) > 0.6;
       steps.push({ type: 'guess', fid: prompt.food.id, answer: close ? 'close' : 'no' });
       continue;
     }
-    steps.push({ type: 'q', qid: prompt.question.id, answer: answerFor(prompt.question, target, rng, maybeRate) });
+    steps.push({ type: 'q', qid: prompt.question.id, answer: answerFor(prompt.question, target, rng, persona) });
   }
-  return { ok: false, steps, confidence };
+  return end(false);
 }
 
 const showAll = process.argv.includes('--all');
+// `checked`: counts toward "Hardest foods". Someone who says maybe to nearly
+// everything can't be expected to land on one exact dish; for them the
+// number that matters is how soon they see restaurants.
 const personas = [
-  { name: 'decisive (never says maybe to other cuisines)', maybeRate: 0 },
-  { name: 'flexible (often says maybe to nearby cuisines)', maybeRate: 0.5 },
+  { name: 'decisive (never says maybe to other cuisines)', maybeRate: 0, checked: true },
+  { name: 'flexible (often says maybe to nearby cuisines)', maybeRate: 0.5, checked: true },
+  { name: 'indecisive (says maybe to 80% of questions)', maybeRate: 0.5, unsure: 0.8, checked: false },
 ];
 const SEEDS = 6;
 const perFood = new Map(engine.foods.map((f) => [f.id, { found: 0, runs: 0, questions: 0, wrong: 0 }]));
@@ -69,16 +80,20 @@ personas.forEach((persona) => {
   let wrong = 0;
   let firstTry = 0;
   let maybes = 0;
+  let placesAt = 0;
+  let placesWorst = 0;
   const confidence = [];
   for (let seed = 1; seed <= SEEDS; seed++) {
     engine.foods.forEach((target) => {
-      const result = play(target, seeded(seed * 7919 + target.index), persona.maybeRate);
+      const result = play(target, seeded(seed * 7919 + target.index), persona);
       const q = result.steps.filter((s) => s.type === 'q').length;
       maybes += result.steps.filter((s) => s.answer === 'maybe').length;
       confidence.push(...result.confidence);
+      placesAt += result.placesAt;
+      placesWorst = Math.max(placesWorst, result.placesAt);
       const g = result.steps.filter((s) => s.type === 'guess').length;
       runs++;
-      const stats = perFood.get(target.id);
+      const stats = persona.checked ? perFood.get(target.id) : { runs: 0, found: 0, questions: 0, wrong: 0 };
       stats.runs++;
       if (result.ok) {
         found++;
@@ -97,6 +112,7 @@ personas.forEach((persona) => {
   console.log(`  avg questions:    ${(questions / found).toFixed(1)}`);
   console.log(`  avg wrong guesses ${(wrong / found).toFixed(2)}`);
   console.log(`  maybes per game:  ${(maybes / runs).toFixed(2)}`);
+  console.log(`  sees restaurants: after ${(placesAt / runs).toFixed(1)} clicks on average, ${placesWorst} at most`);
   const sorted = [...confidence].sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)];
   const unsure = confidence.filter((c) => c < 0.7).length;

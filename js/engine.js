@@ -10,6 +10,7 @@
  * A game is just a list of steps, so undo is "drop the last step":
  *   { type: 'q', qid: 't:noodles', answer: 'yes' | 'maybe' | 'no' }
  *   { type: 'guess', fid: 'pho', answer: 'no' | 'close' }
+ *   { type: 'more' }  "keep going" after Cupid gave up: a fresh set of guesses
  */
 (function (root, factory) {
   const api = factory();
@@ -26,6 +27,9 @@
   // Leaves room for people answering a little inconsistently.
   const CUISINE_FLOOR = 0.03;
   const TRAIT_FLOOR = 0.06;
+  // After the cuisine questions, don't bring up a new part of the world while
+  // the ones the user leaned toward still hold this much of the probability.
+  const TRACK_HOLD = 0.25;
 
   const GUESS = {
     minQuestions: 3,
@@ -33,6 +37,7 @@
     certain: 0.85, // ...unless the next pick is already this likely
     confident: 0.7, // guess once the top food is this likely,
     stale: 0.04, // or when no question left is worth asking (bits)
+    maybeRun: 3, // or after this many Maybes in a row, however unsure
     maxQuestions: 22,
     maxRejected: 4,
   };
@@ -179,6 +184,7 @@
     }
 
     function stepLikelihood(step, f) {
+      if (step.type === 'more') return 1;
       if (step.type === 'guess') {
         if (f.id === step.fid) return step.answer === 'close' ? 0.08 : 0.01;
         return step.answer === 'close' ? 0.25 + 0.75 * similarity(f, foodById[step.fid]) : 1;
@@ -186,9 +192,36 @@
       return likelihood(questionById[step.qid], step.answer, f);
     }
 
+    const rejectedIds = (steps) => new Set(steps.filter((s) => s.type === 'guess').map((s) => s.fid));
+
+    // Cuisine nodes the user answered yes / maybe / no to.
+    function cuisineAnswers(steps) {
+      const said = { yes: [], maybe: [], no: [] };
+      steps.forEach((s) => {
+        const q = s.type === 'q' && questionById[s.qid];
+        if (q && q.kind === 'cuisine') said[s.answer].push(q.node);
+      });
+      return said;
+    }
+
+    // In every cuisine the user said yes to, and not wholly inside one they
+    // said no to (pizza survives "no classic American" — it's Italian too).
+    function fits(f, said) {
+      return said.yes.every((n) => f.member[n]) &&
+        said.no.every((n) => Object.keys(f.cz).some((leaf) => !lineage(leaf).includes(n)));
+    }
+
+    // Cuisine answers are taken at their word: while any dish that fits them is
+    // still in play, the rest are out, so a wrong guess can't send Cupid back
+    // to a cuisine you ruled out. If every dish that fits is turned down, the
+    // others come back rather than leaving nothing to guess.
     function posterior(steps) {
       const w = foods.map((f) => f.prior);
       steps.forEach((s) => foods.forEach((f, i) => { w[i] *= stepLikelihood(s, f); }));
+      const said = cuisineAnswers(steps);
+      const rejected = rejectedIds(steps);
+      const fit = foods.map((f) => fits(f, said));
+      if (foods.some((f, i) => fit[i] && !rejected.has(f.id))) fit.forEach((ok, i) => { if (!ok) w[i] = 0; });
       const total = w.reduce((a, b) => a + b, 0);
       return w.map((x) => x / total);
     }
@@ -222,17 +255,57 @@
 
       let sinceGuess = 0;
       for (let i = steps.length - 1; i >= 0 && steps[i].type === 'q'; i--) sinceGuess++;
+      // Maybes in a row, counted only if one of them is about the dish itself:
+      // "maybe Thai, maybe Vietnamese" is someone open to Southeast Asian
+      // food, not someone who can't decide.
+      let maybeRun = 0;
+      let dishMaybe = false;
+      for (let i = steps.length - 1; i >= 0 && steps[i].type === 'q' && steps[i].answer === 'maybe'; i--) {
+        maybeRun++;
+        if (questionById[steps[i].qid].kind === 'trait') dishMaybe = true;
+      }
+      if (!dishMaybe) maybeRun = 0;
+      // Wrong guesses since the user last chose to keep going.
+      let misses = 0;
+      for (let i = steps.length - 1; i >= 0 && steps[i].type !== 'more'; i--) if (steps[i].type === 'guess') misses++;
+      const rejected = rejectedIds(steps);
+
+      // Where the game has been heading: regions of cuisines the user said yes
+      // or maybe to, and of dishes Cupid already guessed.
+      const said = cuisineAnswers(steps);
+      const track = new Set([...said.yes, ...said.maybe].map(regionOf));
+      rejected.forEach((id) => Object.keys(foodById[id].cz).forEach((leaf) => track.add(regionOf(leaf))));
+      let trackMass = 0;
+      foods.forEach((f, i) => { if ([...track].some((r) => f.member[r])) trackMass += p[i]; });
 
       return {
         qCount: qSteps.length,
         leafYes,
         leafNo,
         maybeLeaves,
-        // Until we know roughly which cuisine, ask about cuisines first.
-        cuisinePhase: !leafYes && topLeafMass < 0.55 && maybeMass < 0.6 && qSteps.length < 7,
+        said,
+        track,
+        trackMass,
+        // Until we know roughly which cuisine, ask about cuisines first. Once
+        // Cupid has made a guess it has picked a direction, so a wrong guess
+        // doesn't restart the cuisine hunt.
+        cuisinePhase: !leafYes && !rejected.size && topLeafMass < 0.55 && maybeMass < 0.6 && qSteps.length < 7,
         sinceGuess,
-        rejected: new Set(steps.filter((s) => s.type === 'guess').map((s) => s.fid)),
+        maybeRun,
+        misses,
+        rejected,
       };
+    }
+
+    // Whether earlier answers already settle a cuisine question. After a yes,
+    // only cuisines inside it are still open. After a no, nothing inside it,
+    // and not the wider group either: "no to classic American" followed by
+    // "American food at all?" reads as the same question twice.
+    function settled(q, said) {
+      if (q.kind !== 'cuisine') return false;
+      const mine = lineage(q.node);
+      if (said.yes.some((n) => n === q.node || !mine.includes(n))) return true;
+      return said.no.some((n) => mine.includes(n) || lineage(n).includes(q.node));
     }
 
     // After "maybe Thai", prefer Vietnamese/Filipino next, then other Asian.
@@ -257,6 +330,10 @@
         return Math.min(0.9, 0.25 + 0.15 * ctx.leafNo);
       }
       if (q.kind === 'trait') return weight;
+      // Keep digging where the answers point (say, Korean after a wrong Korean
+      // BBQ guess) rather than bringing up a part of the world the user hasn't
+      // shown interest in, until that direction has mostly run dry.
+      if (ctx.trackMass >= TRACK_HOLD && !ctx.track.has(regionOf(q.node))) return 0;
       return q.leaf ? 0.6 : 0.3;
     }
 
@@ -267,7 +344,7 @@
         .map((food, i) => ({ food, p: p[i] }))
         .filter((r) => !ctx.rejected.has(r.food.id))
         .sort((a, b) => b.p - a.p);
-      if (!ranked.length || ctx.rejected.size >= GUESS.maxRejected) return { type: 'giveup' };
+      if (!ranked.length || ctx.misses >= GUESS.maxRejected) return { type: 'giveup' };
 
       const h = entropy(p);
       // Open with a hunch, like Akinator: one of the big cuisines, picked at
@@ -287,7 +364,7 @@
       let best = null;
       let bestGain = 0;
       questions.forEach((q) => {
-        if (asked.has(q.id)) return;
+        if (asked.has(q.id) || settled(q, ctx.said)) return;
         const mult = multiplier(q, ctx);
         if (!mult) return;
         const gain = infoGain(q, p, h);
@@ -306,6 +383,13 @@
       if (!best || (ready && (sure || stuck)) || longGame) {
         return { type: 'guess', food: top.food, confidence: top.p };
       }
+      // Someone who answers Maybe to everything would be clicking forever, so
+      // after a run of them Cupid stops asking and offers its best pick from
+      // the answers so far. If that's not it, the game carries on from there,
+      // with the pick counted as a "no".
+      if (ctx.qCount >= GUESS.minQuestions && ctx.maybeRun >= GUESS.maybeRun) {
+        return { type: 'guess', food: top.food, confidence: top.p, indecisive: true };
+      }
       return { type: 'question', question: best.q, confidence: top.p };
     }
 
@@ -314,7 +398,7 @@
       const ctx = context(steps, p);
       return foods
         .map((food, i) => ({ food, p: p[i] }))
-        .filter((r) => !ctx.rejected.has(r.food.id))
+        .filter((r) => r.p > 0 && !ctx.rejected.has(r.food.id))
         .sort((a, b) => b.p - a.p);
     }
 
