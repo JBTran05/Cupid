@@ -58,7 +58,9 @@ and `.env` is git-ignored and never served.
   (Google Places or OpenStreetMap).
 
 Your location is only sent to these services to search. It's kept in memory
-in the page and never stored.
+in the page and not stored, unless you tick **Remember this location on this
+device**. Then it's saved in your browser only (never on the server), and you
+can remove it with **Forget** on the start screen.
 
 ## Adding dishes
 
@@ -107,6 +109,8 @@ conversation. Built on 2026-10-24 with Claude Code.
    want and presses Maybe for everything would be clicking forever. When Cupid
    sees that, it should show a place based on the answers so far, then base
    the rest of the game on those.
+7. **Remember the last location**, opt-in only, so returning users can skip
+   the location step.
 
 ### Timeline of changes
 
@@ -159,7 +163,8 @@ conversation. Built on 2026-10-24 with Claude Code.
 **3. Location first, then a real restaurant list with food photos.**
 - New **location step** after "Find my match": "Share my location" (browser
   permission prompt), or type a city/ZIP, or skip. A 📍 chip in the header
-  shows/changes the location at any time. Location lives in page memory only.
+  shows/changes the location at any time. Location lives in page memory only
+  (until step 6 added an opt-in to remember it).
 - Added a **local Node server** (`server.js` + `server/`), because the
   restaurant APIs can't be called from the browser (CORS, API key secrecy,
   OpenStreetMap blocks browser user-agents).
@@ -272,6 +277,20 @@ conversation. Built on 2026-10-24 with Claude Code.
   a rejected dish, 14% reached their dish (vs ~3% without it). Browser:
   4 early picks passed → stumped screen → Keep going → question 15 ("round
   two"); Back → stumped screen; shortlist pick → keep guessing → continues.
+
+**6. Remember the last location (opt-in)** (2026-10-25, branch
+`lastlocation`, merged after the algorithm work).
+- Owner asked for returning users to skip the location step, opt-in only.
+- The location step has a **Remember this location on this device** checkbox,
+  off by default. When it's ticked and a location is set, `{ lat, lng, label }`
+  is saved in `localStorage` under `cupid.lastLocation`. Setting a location
+  with it unticked deletes any saved one.
+- On page load a saved location is restored and `/api/prepare` is called, so
+  "Find my match" goes straight to the questions. The start screen then shows
+  "📍 Restaurants near *Place*" with **Change** and **Forget**. The checkbox
+  starts ticked when a location is already saved.
+- Storage access is wrapped in try/catch: if the browser blocks it (private
+  windows, strict settings), the location still works for that visit.
 
 ### Data model (`js/data.js`)
 
@@ -463,6 +482,8 @@ conversation. Built on 2026-10-24 with Claude Code.
   right away, and the game continues from their answers if they want more.
 - Restaurants are shown inside the app (no "search Google Maps" step), with
   food photos, after asking for location up front.
+- Remembering the location is opt-in (off by default) and stays in the
+  browser; Forget removes it.
 - Keep the per-restaurant **Directions** button.
 - The GitHub repo is named `cupid`.
 
@@ -471,5 +492,3 @@ conversation. Built on 2026-10-24 with Claude Code.
 - Set up the Google Places key and verify the Google path end to end.
 - Show the dish photo on the guess card too (it's already prefetched).
 - Desserts, drinks, breakfast as categories.
-- Remember the last location (opt-in) so returning users skip the location
-  step.

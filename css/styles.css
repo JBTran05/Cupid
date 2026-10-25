@@ -641,6 +641,22 @@ kbd {
 .end-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 28px; }
 .locate-note { margin: 18px 0 0; color: var(--muted); font-size: 14px; }
 
+.remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.remember input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+
+.saved-location { margin: 14px 0 0; color: var(--muted); font-size: 15px; }
+.saved-location b { color: var(--ink); }
+.saved-location .link-btn { padding: 4px 8px; }
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 880px) {
