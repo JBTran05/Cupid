@@ -16,7 +16,7 @@
     history: [], // prompts already answered, so Back can show them again
     prompt: null,
     match: null,
-    matchFrom: null, // 'guess' | 'pick'
+    matchFrom: null, // 'guess' | 'pick' | 'suggest' (shown early after a run of Maybes)
     location: null, // { lat, lng, label }; kept in memory only
     locate: { busy: '', error: '', query: '', then: 'game' },
     places: null, // { foodId, status, items, next, provider, error, slow, loadingMore, moreError }
@@ -304,15 +304,17 @@
     const f = state.match;
     const others = engine.ranking(state.steps).filter((r) => r.food !== f).slice(0, 4).map((r) => r.food);
     const where = state.location ? state.location.label : 'you';
+    const suggested = state.matchFrom === 'suggest';
     return `
       <section class="screen match">
         <div class="match-hero">
           <div class="match-photo" id="dish-photo"></div>
           <div class="match-info">
-            <p class="eyebrow">${mascot('love', 'mascot-inline')}It's a match</p>
+            <p class="eyebrow">${suggested ? `${mascot('excited', 'mascot-inline')}Can't decide? Try this` : `${mascot('love', 'mascot-inline')}It's a match`}</p>
             <h1 id="prompt-text" tabindex="-1">${esc(f.name)}</h1>
             <p class="match-cuisine">${esc(cuisineName(f))}</p>
             <p class="match-desc">${esc(f.desc)}</p>
+            ${suggested ? '<p class="match-why">Lots of maybes, so here’s my best pick from what you’ve told me. Not it? Keep going and I’ll work from there.</p>' : ''}
           </div>
         </div>
         <section class="places" aria-labelledby="places-title">
@@ -479,6 +481,8 @@
       state.screen = 'giveup';
     } else {
       state.prompt = next;
+      // After a run of Maybes, skip the guess card and go straight to places.
+      if (next.indecisive) return showMatch(next.food, 'suggest');
       state.screen = 'play';
       if (next.type === 'guess') loadDishPhoto(next.food); // ready in case it's a yes
     }
@@ -520,7 +524,8 @@
 
   function backToGame() {
     state.screen = 'play';
-    if (state.matchFrom === 'guess') answer('no');
+    // Moving on from a guess or an early pick counts as "not that one".
+    if (state.matchFrom === 'guess' || state.matchFrom === 'suggest') answer('no');
     else render();
   }
 

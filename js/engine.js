@@ -36,6 +36,7 @@
     certain: 0.85, // ...unless the next pick is already this likely
     confident: 0.7, // guess once the top food is this likely,
     stale: 0.04, // or when no question left is worth asking (bits)
+    maybeRun: 3, // or after this many Maybes in a row, however unsure
     maxQuestions: 22,
     maxRejected: 4,
   };
@@ -252,6 +253,16 @@
 
       let sinceGuess = 0;
       for (let i = steps.length - 1; i >= 0 && steps[i].type === 'q'; i--) sinceGuess++;
+      // Maybes in a row, counted only if one of them is about the dish itself:
+      // "maybe Thai, maybe Vietnamese" is someone open to Southeast Asian
+      // food, not someone who can't decide.
+      let maybeRun = 0;
+      let dishMaybe = false;
+      for (let i = steps.length - 1; i >= 0 && steps[i].type === 'q' && steps[i].answer === 'maybe'; i--) {
+        maybeRun++;
+        if (questionById[steps[i].qid].kind === 'trait') dishMaybe = true;
+      }
+      if (!dishMaybe) maybeRun = 0;
       const rejected = rejectedIds(steps);
 
       // Where the game has been heading: regions of cuisines the user said yes
@@ -275,6 +286,7 @@
         // doesn't restart the cuisine hunt.
         cuisinePhase: !leafYes && !rejected.size && topLeafMass < 0.55 && maybeMass < 0.6 && qSteps.length < 7,
         sinceGuess,
+        maybeRun,
         rejected,
       };
     }
@@ -364,6 +376,13 @@
       const longGame = ctx.qCount >= GUESS.maxQuestions && ctx.sinceGuess >= 1;
       if (!best || (ready && (sure || stuck)) || longGame) {
         return { type: 'guess', food: top.food, confidence: top.p };
+      }
+      // Someone who answers Maybe to everything would be clicking forever, so
+      // after a run of them Cupid stops asking and offers its best pick from
+      // the answers so far. If that's not it, the game carries on from there,
+      // with the pick counted as a "no".
+      if (ctx.qCount >= GUESS.minQuestions && ctx.maybeRun >= GUESS.maybeRun) {
+        return { type: 'guess', food: top.food, confidence: top.p, indecisive: true };
       }
       return { type: 'question', question: best.q, confidence: top.p };
     }

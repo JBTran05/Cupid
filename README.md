@@ -103,6 +103,10 @@ conversation. Built on 2026-10-24 with Claude Code.
    asked about American food again. If the answers already point to a
    cuisine, Cupid shouldn't ask about another one, and it should never re-ask
    about a cuisine that was already answered.
+6. **"Don't make it too clicky."** Someone who really doesn't know what they
+   want and presses Maybe for everything would be clicking forever. When Cupid
+   sees that, it should show a place based on the answers so far, then base
+   the rest of the game on those.
 
 ### Timeline of changes
 
@@ -222,6 +226,44 @@ conversation. Built on 2026-10-24 with Claude Code.
   Korean, grilled → guessed Korean BBQ at 71% → Nope → asked noodles,
   dumplings, Asian fusion, soup, Filipino (no American) → Sizzling Sisig.
 
+**5. Don't make indecisive people click forever** (2026-10-24, same branch).
+- Before: someone answering Maybe to everything clicked ~29 times and almost
+  always ended on "You've stumped Cupid" without seeing a single restaurant.
+- Now, after **3 Maybes in a row** (`GUESS.maybeRun`), at least one of them
+  about the dish rather than the cuisine, Cupid stops asking and goes
+  straight to the match screen for its best pick so far, headed "Can't
+  decide? Try this" with a note explaining why, the restaurant list and the
+  runner-up chips. "Not quite, keep guessing" carries on from the answers so
+  far with that pick counted as a "no", so the next questions and picks build
+  on everything said. Back from there shows the pick as a normal guess card.
+- Why "one about the dish": with every Maybe counting, the flexible simulated
+  user ("maybe Thai, maybe Vietnamese, maybe Filipino" = open to Southeast
+  Asian, a real answer) dropped from 99.1% to 93.0% right first try. Requiring
+  one dish Maybe keeps it at 98.8%. Counting cuisine Maybes as half, or only
+  when they hop regions, kept 99.1% but showed places ~1 click later.
+- Early picks count toward the 4-wrong-guesses limit, so a person who keeps
+  saying Maybe gets ~4 picks with restaurants and then the shortlist, in about
+  16-18 clicks.
+- `npm run simulate` now has a third persona, **indecisive** (Maybe to 80% of
+  questions; not counted in "Hardest foods"), and prints how many clicks
+  before each persona sees restaurants:
+
+  | Indecisive persona | Before | After |
+  |---|---|---|
+  | Clicks before seeing any restaurants | 27.3 | 6.4 |
+  | Questions per game | 21.4 | 15.4 |
+  | Ends on the exact dish they had in mind | 27.8% | 19.6% |
+
+  The last row drops because early picks use up the guess limit; for someone
+  that unsure, being shown places early matters more than the exact dish.
+  Decisive persona unchanged; flexible 98.8% right first try (was 99.1%).
+- Scratch test, players answering Maybe to everything / 80% / 50%: clicks
+  before any place 28.8 → 4.6, 27.3 → 6.5, 22.8 → 11.8.
+- Browser: Maybe ×6 (five cuisines, then noodles) → "Can't decide? Try this:
+  Ramen" with Pad Thai, Pho, Chinese Takeout, Hand-Pulled Noodles as
+  alternatives → keep guessing → Maybe ×3 (rice, spicy, soup) → Soft Tofu
+  Stew. Checked Back, dark mode and 375 px width.
+
 ### Data model (`js/data.js`)
 
 - `cuisines`: id → `{ name, parent, emoji, phrase?, adj?, osm? }`. Groups:
@@ -282,6 +324,8 @@ conversation. Built on 2026-10-24 with Claude Code.
     probability (`TRACK_HOLD`).
 - **Guessing:** needs ≥3 questions; guesses when the top dish is **≥70%**
   likely, or when no question is worth ≥0.04 bits, or after 22 questions.
+  After 3 Maybes in a row (one of them on a dish question) it makes an early
+  pick however unsure it is, flagged `indecisive: true` on the prompt.
   Two questions between guesses unless the top dish is ≥85%. After 4 rejected
   guesses it gives up and shows a shortlist.
 - **Guess answers:** Nope → that dish ×0.01. Close → that dish ×0.08 and every
@@ -297,6 +341,9 @@ conversation. Built on 2026-10-24 with Claude Code.
   is template strings into `#app`. The match screen's restaurant list and dish
   photo are filled separately (`renderPlaces`, `renderDishPhoto`) so they can
   update as data arrives.
+- An `indecisive` prompt skips the guess card: `showMatch(food, 'suggest')`
+  opens the match screen with the "Can't decide? Try this" heading, and
+  "keep guessing" from there records a "no" on that dish, as for a guess.
 - Talks to the server with `api()`. Requests carrying the location are POSTs,
   so coordinates stay out of URLs and logs.
 - When a location is set it calls `/api/prepare` so the server starts
@@ -351,7 +398,8 @@ conversation. Built on 2026-10-24 with Claude Code.
   100% of dishes found, ~99% on the first guess, ~10 questions on average.
   Its users answer perfectly consistently, so Cupid almost never guesses
   wrong there and the after-a-wrong-guess path barely gets exercised; step 4
-  was checked with a separate noisier test (see the timeline).
+  was checked with a separate noisier test (see the timeline). Since step 5
+  it also plays an indecisive persona and prints clicks before restaurants.
 - Played in the browser (light and dark mode, desktop and 375 px phone width,
   no horizontal scrolling). Checked: the "maybe Thai → Vietnamese?" flow, Close
   on a guess, Back through guesses, "Not quite, keep guessing", give-up
@@ -393,6 +441,8 @@ conversation. Built on 2026-10-24 with Claude Code.
   don't switch to another cuisine while the answers point to one, including
   after a wrong guess.
 - Algorithm work goes on its own branch, merged only when the owner says so.
+- Don't make people click forever: a run of Maybes gets them a place to eat
+  right away, and the game continues from their answers if they want more.
 - Restaurants are shown inside the app (no "search Google Maps" step), with
   food photos, after asking for location up front.
 - Keep the per-restaurant **Directions** button.
